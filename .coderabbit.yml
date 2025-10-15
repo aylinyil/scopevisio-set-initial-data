@@ -1,0 +1,17 @@
+reviews:
+  sequence_diagrams: true
+  profile: assertive
+  request_changes_workflow: true
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_empty_files: true
+  auto_review:
+    enabled: true
+    drafts: false
+chat:
+   auto_reply: false
+knowledge_base:
+   opt_out: false
+   learnings:
+      scope: auto
