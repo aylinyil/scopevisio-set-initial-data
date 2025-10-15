@@ -1,0 +1,11 @@
+VEHICLE_TYPE, VEHICLE_FACTOR
+"Kleinwagen", 0.8
+"Kombi", 1.1
+"Limousine", 1.1
+"SUV", 1.2
+"Sportwagen", 1.3
+"Elektrofahrzeug", 1.3
+"Hybridfahrzeug", 1.2
+"Transporter", 1.4
+"LKW", 1.4
+"Motorrad", 1.6
