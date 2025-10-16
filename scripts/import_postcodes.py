@@ -1,6 +1,7 @@
 import pandas as pd
 import logging
 import sys
+import os
 
 logger = logging.getLogger("Logger")
 logger.setLevel(logging.INFO)
@@ -13,15 +14,42 @@ logger.addHandler(handler)
 
 # --- Load Region Factors from CSV
 def load_region_factors(path):
+    """
+    Loads region factors from a CSV file.
+
+    Args:
+        path (str): Path to the CSV file.
+
+    Returns:
+        pd.DataFrame: DataFrame containing REGION1 and REGION_FACTOR.
+
+    Raises:
+        FileNotFoundError: If the file does not exist.
+        ValueError: If the file is empty or missing required columns.
+        Exception: For any other unexpected error.
+    """
     try:
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"File not found: {path}")
+        
         logger.info(f"Loading Region Factors from CSV: {path}")
         df = pd.read_csv(path)
+
+        if df.empty:
+            raise ValueError(f"File is empty: {path}")
+        
         # Column names trim (removes leading/trailing spaces)
         df.columns = df.columns.str.strip()
+
+        required_columns = {"REGION1", "REGION_FACTOR"}
+        if not required_columns.issubset(df.columns):
+            raise ValueError(f"Missing required columns: {required_columns - set(df.columns)}")
+        
         # Remove quotes and spaces from values
         df["REGION1"] = df["REGION1"].astype(str).str.strip().str.strip('"')
         df["REGION_FACTOR"] = df["REGION_FACTOR"].astype(float)
         factors = dict(zip(df["REGION1"], df["REGION_FACTOR"]))
+       
         logger.info(f"{len(factors)} regions loaded.")
         return factors
     except Exception as e:
@@ -31,11 +59,22 @@ def load_region_factors(path):
 # --- Read CSV file "postcodes"
 def load_csv(path):
     try:
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"File not found: {path}")
+        
         logger.info(f"Load postcode CSV file: {path}")
         df = pd.read_csv(path, header=None)
+
+        if df.empty:
+            raise ValueError(f"File is empty: {path}")
+        
+        if df.shape[1] < 7:
+            raise ValueError("CSV file must contain at least 7 columns")
+
         # Column index 2 = region; 6 = postcode
         df = df[[2, 6]]
         df.columns = ["region", "postcode"]
+
         df = df.dropna(subset=["region", "postcode"])
         # Only keep 5-digit postcodes, remove quotes and spaces
         df["postcode"] = (
@@ -44,10 +83,15 @@ def load_csv(path):
             .str.strip()
             .str.extract(r"(\d{5})")[0]  # extract only 5-digit sequences
         )
+
+        if df["postcode"].isna().any():
+            raise ValueError("Invalid postcode values detected in CSV file")
+        
         df["region"] = df["region"].astype(str).str.strip().str.strip('"')
         df = df[df["postcode"].notna()]
         df["postcode"] = df["postcode"].astype(str).str.zfill(5)
         logger.info(f"{len(df)} lines loaded.")
+
         return df
     except Exception as e:
         logger.error(f"Error loading postcode CSV: {e}")

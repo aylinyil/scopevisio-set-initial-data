@@ -1,6 +1,7 @@
 import pandas as pd
 import logging
 import sys
+import os
 
 logger = logging.getLogger("Logger")
 logger.setLevel(logging.INFO)
@@ -11,18 +12,55 @@ handler.setFormatter(formatter)
 
 logger.addHandler(handler)
 
-# --- Load Vehicle Factors from CSV
 def load_vehicle_factors(path):
+    """
+    Loads vehicle factors from a CSV file.
+
+    Args:
+        path (str): Path to the CSV file.
+
+    Returns:
+        pd.DataFrame: DataFrame containing VEHICLE_TYPE and VEHICLE_FACTOR.
+
+    Raises:
+        FileNotFoundError: If the file does not exist.
+        ValueError: If the file is empty or missing required columns.
+        Exception: For any other unexpected error.
+    """
     try:
+        # --- Check if file exists ---
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"File not found: {path}")
+
+        # --- Attempt to read CSV ---
         df = pd.read_csv(path)
-        # Trim column names (removes leading/trailing spaces)
+
+        # --- Check if DataFrame is empty ---
+        if df.empty:
+            raise ValueError(f"File is empty: {path}")
+
+        # --- Normalize columns and values ---
         df.columns = df.columns.str.strip()
-        # Delete quotes and spaces from values
+
+        required_columns = {"VEHICLE_TYPE", "VEHICLE_FACTOR"}
+        if not required_columns.issubset(df.columns):
+            raise ValueError(f"Missing required columns: {required_columns - set(df.columns)}")
+
         df["VEHICLE_TYPE"] = df["VEHICLE_TYPE"].astype(str).str.strip().str.strip('"')
         df["VEHICLE_FACTOR"] = df["VEHICLE_FACTOR"].astype(float)
 
-        logger.info(f"{len(df)} vehicle types loaded.")
+        logger.info(f"{len(df)} vehicle types loaded from '{path}'.")
         return df
+
+    except FileNotFoundError as e:
+        logger.error(e)
+        raise
+    except pd.errors.EmptyDataError:
+        logger.error(f"CSV file is empty: {path}")
+        raise ValueError(f"CSV file is empty: {path}")
+    except ValueError as e:
+        logger.error(e)
+        raise
     except Exception as e:
         logger.error(f"Error loading vehicle factors: {e}")
         raise
