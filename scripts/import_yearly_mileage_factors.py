@@ -5,12 +5,12 @@ import os
 
 logger = logging.getLogger("Logger")
 logger.setLevel(logging.INFO)
-
-handler = logging.StreamHandler(sys.stdout)
-formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(name)s: %(message)s')
-handler.setFormatter(formatter)
-
-logger.addHandler(handler)
+if not logger.handlers:
+    handler = logging.StreamHandler(sys.stdout)
+    formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(name)s: %(message)s')
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+logger.propagate = False
 
 # --- Load Yearly Mileage Factors from CSV
 def load_yearly_milaege_factors(path):

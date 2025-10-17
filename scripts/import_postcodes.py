@@ -5,12 +5,12 @@ import os
 
 logger = logging.getLogger("Logger")
 logger.setLevel(logging.INFO)
-
-handler = logging.StreamHandler(sys.stdout)
-formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(name)s: %(message)s')
-handler.setFormatter(formatter)
-
-logger.addHandler(handler)
+if not logger.handlers:
+    handler = logging.StreamHandler(sys.stdout)
+    formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(name)s: %(message)s')
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+logger.propagate = False
 
 # --- Load Region Factors from CSV
 def load_region_factors(path):
@@ -84,11 +84,13 @@ def load_csv(path):
             .str.extract(r"(\d{5})")[0]  # extract only 5-digit sequences
         )
 
-        if df["postcode"].isna().any():
-            raise ValueError("Invalid postcode values detected in CSV file")
+        # Drop rows where postcode could not be parsed to a 5-digit code
+        invalid_count = df["postcode"].isna().sum()
+        if invalid_count:
+            logger.warning("Dropping %s rows with invalid postcodes from CSV.", int(invalid_count))
+        df = df[df["postcode"].notna()]
         
         df["region"] = df["region"].astype(str).str.strip().str.strip('"')
-        df = df[df["postcode"].notna()]
         df["postcode"] = df["postcode"].astype(str).str.zfill(5)
         logger.info(f"{len(df)} lines loaded.")
 
@@ -101,10 +103,14 @@ def load_csv(path):
 def insert_postcodes(df, region_factors, cur):
     try:
         regions = df["region"].unique()
-        logger.info("Regions in CSV file: ", regions)
+        logger.info(f"Regions in CSV file: {regions}")
 
         for region in regions:
             factor = region_factors.get(region)
+            if factor is None:
+                # Default to neutral factor when mapping is missing
+                logger.warning("Region '%s' missing in factors mapping. Defaulting factor to 1.0.", region)
+                factor = 1.0
             logger.info(f"\nRegion: {region} → Factor: {factor}")
 
             # Check if the region already exists in DB

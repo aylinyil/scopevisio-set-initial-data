@@ -3,7 +3,7 @@ import tempfile
 import os
 import pandas as pd
 
-from scripts.import_postcodes import load_csv, load_region_factors
+from scripts.import_postcodes import load_csv, load_region_factors, insert_postcodes
 
 ################################################################################
 # --- Unit tests for method load_region_factors from import_region_factors.py
@@ -163,8 +163,8 @@ def test_load_csv_missing_columns():
     finally:
         os.unlink(path)
 
-def test_load_csv_invalid_data():
-    """Raises ValueError if postcode data is invalid."""
+def test_load_csv_invalid_data_is_filtered():
+    """Invalid postcodes are dropped and no exception is raised."""
 
     bad_data = (
         '"DE","DE-BW","Baden-Württemberg","Freiburg","Beisgau-Hochschwarzwald","Hexental","not_a_postcode"\n'
@@ -174,8 +174,10 @@ def test_load_csv_invalid_data():
         path = f.name
 
     try:
-        with pytest.raises(ValueError):
-            load_csv(path)
+        result = load_csv(path)
+        # All rows invalid → expect empty DataFrame with correct columns
+        assert list(result.columns) == ["region", "postcode"]
+        assert result.empty
     finally:
         os.unlink(path)
 
@@ -190,3 +192,95 @@ def sample_df():
         "region": ["Baden-Württemberg", "Bayern"],
         "postcode": ["79289", "80331"]
     })
+
+
+def test_insert_postcodes_new_entries(sample_df, mocker):
+    cur = mocker.Mock()
+
+    # Sequence per region loop: SELECT region → None, INSERT region → [id]
+    cur.fetchone.side_effect = [
+        None, [1],  # Baden-Württemberg
+        None, [2],  # Bayern
+    ]
+    # No existing postcodes
+    cur.fetchall.side_effect = [
+        [],  # existing postcodes for first region
+        [],  # existing postcodes for second region
+    ]
+
+    region_factors = {"Baden-Württemberg": 1.1, "Bayern": 1.6}
+
+    insert_postcodes(sample_df, region_factors, cur)
+
+    # Regions inserted twice
+    region_insert_calls = [
+        call for call in cur.execute.call_args_list
+        if call[0][0].startswith("INSERT INTO regions")
+    ]
+    assert len(region_insert_calls) == 2
+
+    # Postcodes inserted twice (one per row)
+    postcode_insert_calls = [
+        call for call in cur.execute.call_args_list
+        if call[0][0].startswith("INSERT INTO postcodes")
+    ]
+    assert len(postcode_insert_calls) == 2
+
+
+def test_insert_postcodes_existing_entries(sample_df, mocker):
+    cur = mocker.Mock()
+
+    # Regions already exist
+    cur.fetchone.side_effect = [[10], [20]]
+    # Existing postcodes already contain both
+    cur.fetchall.side_effect = [
+        [("79289",)],
+        [("80331",)],
+    ]
+
+    region_factors = {"Baden-Württemberg": 1.1, "Bayern": 1.6}
+
+    insert_postcodes(sample_df, region_factors, cur)
+
+    # No region insertions
+    region_insert_calls = [
+        call for call in cur.execute.call_args_list
+        if call[0][0].startswith("INSERT INTO regions")
+    ]
+    assert len(region_insert_calls) == 0
+
+    # No postcode insertions
+    postcode_insert_calls = [
+        call for call in cur.execute.call_args_list
+        if call[0][0].startswith("INSERT INTO postcodes")
+    ]
+    assert len(postcode_insert_calls) == 0
+
+
+def test_insert_postcodes_missing_factor_defaults(sample_df, mocker):
+    cur = mocker.Mock()
+
+    # Force creation for first region only to inspect factor argument
+    cur.fetchone.side_effect = [
+        None, [1],  # Baden-Württemberg → will insert
+        [2],        # Bayern exists
+    ]
+    cur.fetchall.side_effect = [
+        [],  # no existing postcodes for first
+        [],  # no existing postcodes for second (won't be used if postcode exists)
+    ]
+
+    # Provide empty factors to trigger defaulting to 1.0
+    region_factors = {}
+
+    insert_postcodes(sample_df, region_factors, cur)
+
+    # Find the regions insert call and verify factor is 1.0
+    region_insert_calls = [
+        call for call in cur.execute.call_args_list
+        if call[0][0].startswith("INSERT INTO regions")
+    ]
+    assert len(region_insert_calls) >= 1
+    # call[0] are positional args → (sql, (region, factor))
+    params = region_insert_calls[0][0][1]
+    assert params[1] == 1.0
